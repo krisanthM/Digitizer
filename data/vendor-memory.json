@@ -1,0 +1,18 @@
+{
+  "vishal punjabi vaishno bhojanalya": {
+    "typical_category": "meals",
+    "amount_history": [
+      146
+    ],
+    "average_amount": 146,
+    "last_seen": "2026-07-29"
+  },
+  "gupta fuel station": {
+    "typical_category": "transport",
+    "amount_history": [
+      1500
+    ],
+    "average_amount": 1500,
+    "last_seen": "2026-07-29"
+  }
+}

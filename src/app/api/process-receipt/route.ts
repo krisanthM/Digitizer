@@ -4,7 +4,7 @@ import { checkVendorMemory } from '@/lib/vendorMemoryStore';
 import Tesseract from 'tesseract.js';
 
 function parseBase64Image(dataUrl: string): { mediaType: string; base64Data: string; buffer: Buffer } {
-  const matches = dataUrl.match(/^data:(image\/[a-zA-Z-+]+);base64,(.+)$/);
+  const matches = dataUrl.match(/^data:((?:image|application)\/[a-zA-Z-+]+);base64,(.+)$/);
   if (matches && matches.length === 3) {
     const base64Data = matches[2];
     return {
@@ -13,7 +13,7 @@ function parseBase64Image(dataUrl: string): { mediaType: string; base64Data: str
       buffer: Buffer.from(base64Data, 'base64'),
     };
   }
-  const cleanBase64 = dataUrl.replace(/^data:image\/[a-zA-Z-+]+;base64,/, '');
+  const cleanBase64 = dataUrl.replace(/^data:(?:image|application)\/[a-zA-Z-+]+;base64,/, '');
   return {
     mediaType: 'image/jpeg',
     base64Data: cleanBase64,
@@ -46,7 +46,7 @@ Extract the following JSON structure:
 
 CRITICAL RULES:
 1. Handle poor handwriting, faded print, torn parts, and non-standard layouts.
-2. ACCURACY OF TOTAL AMOUNT: The "amount" MUST accurately match the gross sum of all line items on the receipt before any deposit or discount deductions, OR match the true overall Total. If line items are present, verify that sum(line_items) equals amount. If a deposit or discount was deducted at the bottom (e.g. deposit £100), note the net/deposit in raw_notes, but keep amount equal to sum of line items!
+2. ACCURACY OF TOTAL AMOUNT & DISCOUNTS: Extract discounts, promo offers, cashback, trade-in deductions, deposits, or returned items as line items with NEGATIVE amounts (e.g., {"description": "Discount / Offer", "amount": -20.00}). Verify that sum(line_items) accurately equals the final net total amount paid (positive item costs minus negative discounts).
 3. CURRENCY: Look for currency symbols (e.g. £ for UK pounds, ₹/Rs for INR, $ for USD, € for Euro). Default to "₹" if unspecified.
 4. Categorize carefully:
    - "meals" for restaurants, pubs, cafes, coffee, dining, hospitality, food & drinks (e.g., "The Old Vicarage Restaurant", "Bar", "Bistro").
@@ -70,7 +70,7 @@ CRITICAL RULES:
 6. Return ONLY the raw JSON string starting with '{' and ending with '}'.`;
 
 async function callGeminiVision(base64Data: string, mediaType: string, apiKey: string): Promise<ProcessedReceiptResponse> {
-  const models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest'];
+  const models = ['gemini-3.6-flash', 'gemini-flash-latest', 'gemini-2.0-flash', 'gemini-3.5-flash'];
   let lastError = '';
 
   for (const model of models) {
@@ -283,13 +283,17 @@ async function processWithTesseract(imageBuffer: Buffer): Promise<ProcessedRecei
       }
     });
 
-    // Check if line looks like item + amount
-    const itemMatch = line.match(/^([a-zA-Z0-9\s&'-]+?)\s+(?:₹|rs\.?|\$)?\s*([0-9]+(?:\.[0-9]{1,2})?)$/i);
+    // Check if line looks like item description followed by numbers (rate / subtotal / amount)
+    const itemMatch = line.match(/^([a-zA-Z0-9\s&'.-]+?)\s+((?:\d+(?:\.\d{1,2})?\s*)+)$/i);
     if (itemMatch) {
       const desc = itemMatch[1].trim();
-      const itemAmt = parseFloat(itemMatch[2]);
-      if (desc.length > 2 && !isNaN(itemAmt) && itemAmt > 0) {
-        lineItems.push({ description: desc, amount: itemAmt });
+      const numTokens = itemMatch[2].trim().split(/\s+/).map((n) => parseFloat(n)).filter((n) => !isNaN(n) && n > 0);
+      if (desc.length >= 2 && numTokens.length > 0) {
+        // Take the last number as the line item amount (e.g. Rate Amount -> Amount)
+        const itemAmt = numTokens[numTokens.length - 1];
+        if (!/total|subtotal|cash|bill|date|change/i.test(desc)) {
+          lineItems.push({ description: desc, amount: itemAmt });
+        }
       }
     }
   });
@@ -335,7 +339,7 @@ export async function GET(request: Request) {
   const openaiKey = process.env.OPENAI_API_KEY;
 
   const hasKey = !!(geminiKey || anthropicKey || openaiKey);
-  const activeProvider = geminiKey ? 'Gemini 2.0 Flash' : anthropicKey ? 'Claude 3.5 Sonnet' : openaiKey ? 'OpenAI GPT-4o' : 'Tesseract Offline OCR';
+  const activeProvider = geminiKey ? 'Gemini 3.6 Flash' : anthropicKey ? 'Claude 3.5 Sonnet' : openaiKey ? 'OpenAI GPT-4o' : 'Tesseract Offline OCR';
 
   return NextResponse.json({
     live: hasKey,
@@ -361,23 +365,44 @@ export async function POST(request: Request) {
 
     let result: ProcessedReceiptResponse;
 
-    // Prioritize configured keys
-    if (customKey) {
-      if (customProvider === 'gemini') {
-        result = await callGeminiVision(base64Data, mediaType, customKey);
-      } else if (customProvider === 'openai') {
-        result = await callOpenAIVision(base64Data, mediaType, customKey);
+    // Prioritize configured keys with automatic offline fallback on 503 / API error
+    try {
+      if (customKey) {
+        if (customProvider === 'gemini') {
+          result = await callGeminiVision(base64Data, mediaType, customKey);
+        } else if (customProvider === 'openai') {
+          result = await callOpenAIVision(base64Data, mediaType, customKey);
+        } else {
+          result = await callClaudeVision(base64Data, mediaType, customKey);
+        }
+      } else if (geminiKey) {
+        try {
+          result = await callGeminiVision(base64Data, mediaType, geminiKey);
+        } catch (geminiErr: any) {
+          console.warn('Gemini API call failed, falling back to local OCR:', geminiErr.message);
+          result = await processWithTesseract(buffer);
+          result.raw_notes = `[Fallback OCR Active] Cloud API returned 503/error. Switched to offline Tesseract OCR.\n${result.raw_notes || ''}`;
+        }
+      } else if (anthropicKey) {
+        try {
+          result = await callClaudeVision(base64Data, mediaType, anthropicKey);
+        } catch (claudeErr: any) {
+          console.warn('Claude API failed, falling back to local OCR:', claudeErr.message);
+          result = await processWithTesseract(buffer);
+        }
+      } else if (openaiKey) {
+        try {
+          result = await callOpenAIVision(base64Data, mediaType, openaiKey);
+        } catch (openaiErr: any) {
+          console.warn('OpenAI API failed, falling back to local OCR:', openaiErr.message);
+          result = await processWithTesseract(buffer);
+        }
       } else {
-        result = await callClaudeVision(base64Data, mediaType, customKey);
+        console.log('No AI API key found. Running local Tesseract.js OCR engine...');
+        result = await processWithTesseract(buffer);
       }
-    } else if (geminiKey) {
-      result = await callGeminiVision(base64Data, mediaType, geminiKey);
-    } else if (anthropicKey) {
-      result = await callClaudeVision(base64Data, mediaType, anthropicKey);
-    } else if (openaiKey) {
-      result = await callOpenAIVision(base64Data, mediaType, openaiKey);
-    } else {
-      console.log('No AI API key found. Running local Tesseract.js OCR engine...');
+    } catch (apiErr: any) {
+      console.warn('All Vision API processing failed, running Tesseract fallback:', apiErr.message);
       result = await processWithTesseract(buffer);
     }
 

@@ -2,6 +2,7 @@
 
 import { useState, useRef, DragEvent, ChangeEvent } from 'react';
 import { ProcessedReceiptResponse } from '@/types/expense';
+import { convertPdfToImageDataUrl } from '@/lib/pdfRenderer';
 
 interface ReceiptUploaderProps {
   onUpload: (base64Image: string, sampleData?: ProcessedReceiptResponse) => void;
@@ -90,9 +91,29 @@ export default function ReceiptUploader({ onUpload, isProcessing }: ReceiptUploa
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      alert('Please upload an image file (PNG, JPG, WEBP).');
+  const [isRenderingPdf, setIsRenderingPdf] = useState(false);
+
+  const handleFile = async (file: File) => {
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    const isImage = file.type.startsWith('image/');
+
+    if (!isPdf && !isImage) {
+      alert('Please upload a valid image file (PNG, JPG, WEBP) or a PDF document.');
+      return;
+    }
+
+    if (isPdf) {
+      setIsRenderingPdf(true);
+      try {
+        const imageDataUrl = await convertPdfToImageDataUrl(file);
+        setPreviewUrl(imageDataUrl);
+        onUpload(imageDataUrl);
+      } catch (err: any) {
+        console.error('Failed to convert PDF receipt:', err);
+        alert(`PDF Processing Error: ${err.message || 'Could not render PDF document.'}`);
+      } finally {
+        setIsRenderingPdf(false);
+      }
       return;
     }
 
@@ -216,9 +237,9 @@ export default function ReceiptUploader({ onUpload, isProcessing }: ReceiptUploa
         ref={fileInputRef}
         type="file"
         className="hidden"
-        accept="image/*"
+        accept="image/*,application/pdf,.pdf"
         onChange={handleChange}
-        disabled={isProcessing}
+        disabled={isProcessing || isRenderingPdf}
       />
 
       {!previewUrl ? (
@@ -241,18 +262,22 @@ export default function ReceiptUploader({ onUpload, isProcessing }: ReceiptUploa
 
             <div className="flex flex-col items-center justify-center p-6 text-center space-y-4">
               <div className="p-4 rounded-full bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 group-hover:scale-110 group-hover:text-indigo-500 dark:group-hover:text-indigo-400 transition-all duration-300">
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                  <polyline points="17 8 12 3 7 8"/>
-                  <line x1="12" x2="12" y1="3" y2="15"/>
-                </svg>
+                {isRenderingPdf ? (
+                  <div className="w-7 h-7 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" x2="12" y1="3" y2="15"/>
+                  </svg>
+                )}
               </div>
               <div>
                 <p className="text-base font-semibold text-zinc-800 dark:text-zinc-200">
-                  Drag and drop your receipt
+                  {isRenderingPdf ? 'Rendering PDF Page...' : 'Drag and drop your receipt or PDF invoice'}
                 </p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                  Supports PNG, JPG, or WEBP images
+                  Supports PNG, JPG, WEBP images & PDF invoices
                 </p>
               </div>
               <button
@@ -261,9 +286,10 @@ export default function ReceiptUploader({ onUpload, isProcessing }: ReceiptUploa
                   e.stopPropagation();
                   onButtonClick();
                 }}
-                className="px-4 py-2 text-xs font-semibold rounded-xl bg-zinc-950 dark:bg-white text-white dark:text-black shadow-sm group-hover:bg-indigo-600 dark:group-hover:bg-indigo-400 group-hover:text-white dark:group-hover:text-black transition-all duration-300 cursor-pointer"
+                disabled={isRenderingPdf}
+                className="px-4 py-2 text-xs font-semibold rounded-xl bg-zinc-950 dark:bg-white text-white dark:text-black shadow-sm group-hover:bg-indigo-600 dark:group-hover:bg-indigo-400 group-hover:text-white dark:group-hover:text-black transition-all duration-300 cursor-pointer disabled:opacity-50"
               >
-                Browse Files
+                {isRenderingPdf ? 'Rendering...' : 'Browse Files'}
               </button>
             </div>
           </div>

@@ -387,63 +387,113 @@ export default function ExpenseDetailsForm({ initialData, onSave, onDiscard }: E
       </div>
 
       {/* Line Items Section */}
-      <div className="space-y-3 pt-3 border-t border-zinc-100 dark:border-zinc-900">
-        <div className="flex items-center justify-between">
-          <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider block">
-            Itemized Line Items ({lineItems.length})
-          </label>
-          {lineItems.length > 0 && (
-            <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-              Total Sum: {currency}{lineItemsSum.toFixed(2)}
+      <div className="space-y-3 pt-4 border-t border-zinc-100 dark:border-zinc-900">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
+            <span>Itemized Line Items</span>
+            <span className="bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-[11px] px-2 py-0.5 rounded-full font-bold">
+              {lineItems.length} {lineItems.length === 1 ? 'item' : 'items'}
             </span>
+          </label>
+
+          {lineItems.length > 0 && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="font-semibold text-zinc-500">Items Sum:</span>
+              <span className="font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-900/60">
+                {currency}{lineItemsSum.toFixed(2)}
+              </span>
+            </div>
           )}
         </div>
 
         {lineItems.length > 0 ? (
-          <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-xs bg-white dark:bg-zinc-950">
+          <div className="border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-xs bg-white dark:bg-zinc-950">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-zinc-50 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 text-xs font-semibold border-b border-zinc-200 dark:border-zinc-800">
-                  <th className="px-4 py-2">Item Description</th>
-                  <th className="px-4 py-2 w-32 text-right">Amount ({currency})</th>
-                  <th className="px-3 py-2 w-12 text-center"></th>
+                <tr className="bg-zinc-100/80 dark:bg-zinc-900/80 text-zinc-600 dark:text-zinc-400 text-[11px] font-bold uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-800">
+                  <th className="px-3 py-2.5 w-10 text-center">#</th>
+                  <th className="px-4 py-2.5">Item Description</th>
+                  <th className="px-4 py-2.5 w-36 text-right">Amount ({currency})</th>
+                  <th className="px-3 py-2.5 w-10 text-center"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900">
-                {lineItems.map((item, idx) => (
-                  <tr key={idx} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-900/10 text-sm">
-                    <td className="px-4 py-2">
-                      <input
-                        type="text"
-                        value={item.description}
-                        onChange={(e) => handleLineItemChange(idx, 'description', e.target.value)}
-                        className="w-full bg-transparent border-0 p-0 focus:ring-0 focus:outline-hidden text-zinc-900 dark:text-zinc-50 text-sm"
-                      />
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={item.amount}
-                        onChange={(e) => handleLineItemChange(idx, 'amount', e.target.value)}
-                        className="w-full bg-transparent border-0 p-0 focus:ring-0 focus:outline-hidden text-right text-zinc-900 dark:text-zinc-50 text-sm font-semibold"
-                      />
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      <button
-                        type="button"
-                        onClick={() => deleteLineItem(idx)}
-                        className="text-zinc-400 hover:text-red-500 dark:hover:text-red-400 transition-colors p-1 cursor-pointer"
-                        title="Delete item"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                        </svg>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900/80">
+                {lineItems.map((item, idx) => {
+                  // Extract quantity prefix e.g. "3kg", "2kg", "4bunch", "100gm", "1" if present
+                  const qtyMatch = item.description.match(/^(\d+(?:\.\d+)?\s*(?:kg|g|gm|gram|bunch|pcs|pkt|liter|l|m|cm|bag|box|can)?)\s+(.+)$/i);
+                  const qtyTag = qtyMatch ? qtyMatch[1] : null;
+                  const cleanDesc = qtyMatch ? qtyMatch[2] : item.description;
+                  const isDiscount = (item.amount || 0) < 0;
+
+                  return (
+                    <tr key={idx} className={`hover:bg-zinc-50 dark:hover:bg-zinc-900/40 text-xs transition-colors ${isDiscount ? 'bg-emerald-50/40 dark:bg-emerald-950/20' : ''}`}>
+                      <td className="px-3 py-2.5 text-center text-zinc-400 font-mono text-[11px]">
+                        {idx + 1}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-2">
+                          {qtyTag && (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 font-bold text-[10px] uppercase border border-amber-200 dark:border-amber-900/50 flex-shrink-0">
+                              {qtyTag}
+                            </span>
+                          )}
+                          {isDiscount && (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 font-bold text-[10px] uppercase border border-emerald-200 dark:border-emerald-900/50 flex-shrink-0">
+                              DISCOUNT
+                            </span>
+                          )}
+                          <input
+                            type="text"
+                            value={cleanDesc}
+                            onChange={(e) => {
+                              const newText = qtyTag ? `${qtyTag} ${e.target.value}` : e.target.value;
+                              handleLineItemChange(idx, 'description', newText);
+                            }}
+                            className="w-full bg-transparent border-0 p-0 focus:ring-0 focus:outline-hidden text-zinc-900 dark:text-zinc-50 font-medium text-xs sm:text-sm"
+                          />
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono">
+                        <div className="flex items-center justify-end gap-1">
+                          <span className={`text-xs ${isDiscount ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-zinc-400'}`}>{currency}</span>
+                          <input
+                            type="number"
+                            step="any"
+                            value={item.amount}
+                            onChange={(e) => handleLineItemChange(idx, 'amount', e.target.value)}
+                            className={`w-24 bg-transparent border-0 p-0 focus:ring-0 focus:outline-hidden text-right font-black text-xs sm:text-sm ${
+                              isDiscount ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-900 dark:text-zinc-50'
+                            }`}
+                          />
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        <button
+                          type="button"
+                          onClick={() => deleteLineItem(idx)}
+                          className="text-zinc-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors p-1 cursor-pointer"
+                          title="Delete item"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                          </svg>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
+              <tfoot>
+                <tr className="bg-zinc-50 dark:bg-zinc-900/60 border-t border-zinc-200 dark:border-zinc-800 text-xs font-bold">
+                  <td colSpan={2} className="px-4 py-2.5 text-zinc-600 dark:text-zinc-400">
+                    Grand Total ({lineItems.length} items)
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-black text-indigo-600 dark:text-indigo-400 font-mono text-sm">
+                    {currency}{lineItemsSum.toFixed(2)}
+                  </td>
+                  <td></td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         ) : (
@@ -453,13 +503,19 @@ export default function ExpenseDetailsForm({ initialData, onSave, onDiscard }: E
         )}
 
         {/* Add Line Item Row */}
-        <div className="flex gap-2 items-center bg-zinc-50/50 dark:bg-zinc-950/20 p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800">
+        <div className="flex gap-2 items-center bg-zinc-50/80 dark:bg-zinc-900/40 p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800">
           <input
             type="text"
             value={newItemDesc}
             onChange={(e) => setNewItemDesc(e.target.value)}
-            placeholder="Add item details..."
-            className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 focus:outline-hidden"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addLineItem();
+              }
+            }}
+            placeholder="Add new item details (e.g. 1kg Apple)..."
+            className="flex-1 px-3 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20"
           />
           <div className="relative w-28">
             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400">
@@ -470,19 +526,22 @@ export default function ExpenseDetailsForm({ initialData, onSave, onDiscard }: E
               step="0.01"
               value={newItemAmt}
               onChange={(e) => setNewItemAmt(e.target.value === '' ? '' : Number(e.target.value))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addLineItem();
+                }
+              }}
               placeholder="0.00"
-              className="w-full pl-6 pr-2 py-1.5 text-xs font-semibold rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 focus:outline-hidden"
+              className="w-full pl-6 pr-2 py-2 text-xs font-semibold rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 text-right font-mono"
             />
           </div>
           <button
             type="button"
             onClick={addLineItem}
-            className="p-1.5 rounded-lg bg-zinc-900 dark:bg-white text-white dark:text-black hover:bg-indigo-600 dark:hover:bg-indigo-400 hover:text-white transition-colors cursor-pointer"
-            title="Add item"
+            className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-all shadow-xs cursor-pointer flex items-center gap-1 flex-shrink-0"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 12h14"/><path d="M12 5v14"/>
-            </svg>
+            <span>+ Add Item</span>
           </button>
         </div>
       </div>
